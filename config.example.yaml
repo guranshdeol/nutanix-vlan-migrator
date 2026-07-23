@@ -1,0 +1,35 @@
+# Prism Central connection + migration tool configuration.
+# Copy to config.yaml and fill in for your environment.
+
+prism_central:
+  host: 10.0.0.10           # PC VIP / FQDN
+  port: 9440
+  username: admin
+  # Prefer setting the password via the PC_PASSWORD env var instead of here.
+  password: null
+  verify_ssl: false         # set true + ca_bundle for production
+  ca_bundle: null           # path to CA bundle when verify_ssl is true
+  timeout_secs: 60
+
+migration:
+  # Poll interval / ceiling while waiting for the migrate task to finish.
+  task_poll_interval_secs: 5
+  task_timeout_secs: 1800
+  # description.md: first failure -> single automatic retry.
+  max_retries: 1
+  # Migrate one subnet at a time (rolling). Keep true for safety.
+  rolling: true
+
+port_polling:
+  enabled: true
+  port: 2121
+  interval_secs: 5
+  # CVM / host IPs to poll from PC during migration. If empty, the tool tries
+  # to discover host IPs via the clustermgmt API.
+  targets: []
+
+reachability:
+  # Optional post-migration ICMP reachability check of VM learned IPs.
+  enabled: false
+  ping_count: 2
+  ping_timeout_secs: 2

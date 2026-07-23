@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nutanix VLAN Migrator</title>
+<meta name="description" content="Interactive, safety-first CLI to migrate Nutanix VLAN subnets from Basic to Advanced using the v4 APIs." />
+<style>
+  :root{
+    --bg:#0b0f17; --bg2:#0f1524; --panel:#131a2a; --panel2:#172033;
+    --text:#e6ecf5; --muted:#9aa7bd; --line:#25304a;
+    --brand:#3ea6ff; --brand2:#7c5cff; --ok:#48d597; --warn:#ffcc66;
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 600px at 70% -10%,rgba(124,92,255,.18),transparent 60%),
+               radial-gradient(1000px 500px at 10% 0%,rgba(62,166,255,.15),transparent 55%),
+               var(--bg);
+    color:var(--text); font-family:var(--sans); line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--brand); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:960px; margin:0 auto; padding:0 20px}
+  header.nav{display:flex; align-items:center; justify-content:space-between; padding:22px 0}
+  .logo{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+  .logo .dot{width:12px;height:12px;border-radius:3px;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+  .nav a{color:var(--muted); margin-left:22px; font-size:14px}
+  .nav a:hover{color:var(--text)}
+
+  .hero{padding:64px 0 36px; text-align:center}
+  .pill{display:inline-block; font-size:12px; color:var(--muted); border:1px solid var(--line);
+        padding:5px 12px; border-radius:999px; background:var(--panel)}
+  h1{font-size:clamp(34px,6vw,58px); line-height:1.05; margin:20px 0 12px; letter-spacing:-1px}
+  h1 .grad{background:linear-gradient(135deg,var(--brand),var(--brand2)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .sub{font-size:18px; color:var(--muted); max-width:680px; margin:0 auto 28px}
+
+  .cmd{display:flex; align-items:stretch; max-width:720px; margin:0 auto; border:1px solid var(--line);
+       background:#0a0e18; border-radius:12px; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.35)}
+  .cmd code{font-family:var(--mono); font-size:14px; padding:16px 18px; color:#d6e2f5; overflow-x:auto; white-space:nowrap; flex:1; text-align:left}
+  .cmd .prompt{color:var(--brand)}
+  .copy{border:0; border-left:1px solid var(--line); background:var(--panel2); color:var(--text);
+        padding:0 18px; cursor:pointer; font-size:13px; font-weight:600}
+  .copy:hover{background:#1e2a44}
+  .copy.done{color:var(--ok)}
+  .os{display:flex; gap:8px; justify-content:center; margin:14px 0 0}
+  .os button{background:var(--panel); color:var(--muted); border:1px solid var(--line);
+             border-radius:8px; padding:7px 14px; cursor:pointer; font-size:13px}
+  .os button.active{color:var(--text); border-color:var(--brand); background:#132238}
+
+  .btns{margin-top:30px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap}
+  .btn{display:inline-block; padding:12px 22px; border-radius:10px; font-weight:600; font-size:15px}
+  .btn.primary{background:linear-gradient(135deg,var(--brand),var(--brand2)); color:#fff}
+  .btn.ghost{border:1px solid var(--line); color:var(--text); background:var(--panel)}
+  .btn:hover{text-decoration:none; opacity:.94}
+
+  section{padding:40px 0}
+  h2{font-size:26px; margin:0 0 22px; letter-spacing:-.3px}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px}
+  .card h3{margin:0 0 8px; font-size:16px}
+  .card p{margin:0; color:var(--muted); font-size:14px}
+  .card .ic{font-size:20px; margin-bottom:10px}
+
+  .steps{counter-reset:step; display:grid; gap:14px}
+  .step{display:flex; gap:14px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+  .step .n{counter-increment:step; flex:0 0 34px; height:34px; width:34px; border-radius:9px;
+           background:#132238; border:1px solid var(--line); display:grid; place-items:center; font-weight:700; color:var(--brand)}
+  .step .n::before{content:counter(step)}
+  .step h3{margin:2px 0 4px; font-size:16px}
+  .step p{margin:0; color:var(--muted); font-size:14px}
+
+  pre{background:#0a0e18; border:1px solid var(--line); border-radius:12px; padding:16px 18px; overflow-x:auto}
+  pre code{font-family:var(--mono); font-size:13.5px; color:#d6e2f5}
+  .muted{color:var(--muted)}
+  footer{border-top:1px solid var(--line); margin-top:30px; padding:26px 0; color:var(--muted); font-size:13px; text-align:center}
+  .note{font-size:13px; color:var(--muted); margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="nav">
+    <div class="logo"><span class="dot"></span> Nutanix VLAN Migrator</div>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#usage">Usage</a>
+      <a href="https://github.com/guranshdeol/nutanix-vlan-migrator">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <span class="pill">Nutanix v4 APIs · networking · vmm · prism</span>
+    <h1>Migrate VLANs from<br><span class="grad">Basic to Advanced</span>, safely.</h1>
+    <p class="sub">An interactive, safety-first CLI for rolling VLAN subnet migration — with pre-flight validation, automatic retry, live connectivity polling, and post-migration verification. Runs fully isolated in its own virtualenv.</p>
+
+    <div class="cmd">
+      <code id="install"><span class="prompt">$ </span><span id="install-text">curl -fsSL https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.sh | bash</span></code>
+      <button class="copy" id="copyBtn" onclick="copyInstall()">Copy</button>
+    </div>
+    <div class="os">
+      <button class="active" data-os="unix" onclick="setOS('unix',this)">macOS / Linux</button>
+      <button data-os="win" onclick="setOS('win',this)">Windows</button>
+    </div>
+    <div class="note">One command: detects Python 3.8+, clones the repo, builds a <code>.venv</code>, installs everything, and launches.</div>
+
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/guranshdeol/nutanix-vlan-migrator">View on GitHub</a>
+      <a class="btn ghost" href="#usage">How to use</a>
+    </div>
+  </div>
+
+  <section id="features">
+    <h2>Why use it</h2>
+    <div class="grid">
+      <div class="card"><div class="ic">🛡️</div><h3>Pre-flight validation</h3><p>Detects duplicate MACs, trunked vNICs, and multi-VLAN VMs before touching anything.</p></div>
+      <div class="card"><div class="ic">🔁</div><h3>Rolling &amp; retried</h3><p>One subnet at a time, with a single automatic retry on first failure — just like the runbook.</p></div>
+      <div class="card"><div class="ic">📡</div><h3>Live port polling</h3><p>Background TCP-2121 probing of CVMs/hosts for connectivity observability during migration.</p></div>
+      <div class="card"><div class="ic">✅</div><h3>Post-verify</h3><p>Confirms Advanced state, NIC connectivity, and drives the task to <em>SUCCEEDED</em>.</p></div>
+      <div class="card"><div class="ic">🎛️</div><h3>Interactive TUI</h3><p>Arrow-key menus, colored tables, checkbox subnet selection, and a live summary.</p></div>
+      <div class="card"><div class="ic">📦</div><h3>Zero footprint</h3><p>Everything lives in a project-local <code>.venv</code>. Delete the folder to uninstall.</p></div>
+    </div>
+  </section>
+
+  <section id="workflow">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step"><div class="n"></div><div><h3>Validate (read-only)</h3><p>Enumerates Basic VLAN subnets and their VMs/NICs via <code>networking</code> &amp; <code>vmm</code>, and reports every finding before any change.</p></div></div>
+      <div class="step"><div class="n"></div><div><h3>Migrate</h3><p>Calls the public <code>migrate-subnets</code> action (the supported equivalent of the internal <code>kVlanSubnetMigration</code> RPC) while polling port 2121 in the background.</p></div></div>
+      <div class="step"><div class="n"></div><div><h3>Verify</h3><p>Tracks the task through the <code>prism</code> Tasks API to <em>SUCCEEDED</em>, then confirms the subnet is Advanced and NICs are still connected.</p></div></div>
+    </div>
+  </section>
+
+  <section id="usage">
+    <h2>Usage</h2>
+    <p class="muted">Launch the interactive UI, or drive it non-interactively for automation:</p>
+<pre><code># Interactive menu
+./run.sh
+
+# Non-interactive
+./run.sh list-basic                          # list Basic VLAN subnets
+./run.sh validate --all                      # validate everything (no changes)
+./run.sh migrate --subnet vlan100 --dry-run  # show the plan
+./run.sh migrate --all                       # rolling migrate all eligible</code></pre>
+    <p class="note">Requires Prism Central 7.3+/AOS 7.3+ with the Network Controller enabled. See the <a href="https://github.com/guranshdeol/nutanix-vlan-migrator#readme">full README</a> for configuration and safety notes.</p>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">Built on the Nutanix v4 API namespaces · <a href="https://github.com/guranshdeol/nutanix-vlan-migrator">guranshdeol/nutanix-vlan-migrator</a></div>
+</footer>
+
+<script>
+  const CMD = {
+    unix: "curl -fsSL https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.sh | bash",
+    win:  "irm https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.ps1 | iex"
+  };
+  function setOS(os, btn){
+    document.getElementById('install-text').textContent = CMD[os];
+    document.querySelectorAll('.os button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const c=document.getElementById('copyBtn'); c.textContent='Copy'; c.classList.remove('done');
+  }
+  function copyInstall(){
+    const t = document.getElementById('install-text').textContent;
+    navigator.clipboard.writeText(t).then(()=>{
+      const c=document.getElementById('copyBtn'); c.textContent='Copied'; c.classList.add('done');
+      setTimeout(()=>{c.textContent='Copy'; c.classList.remove('done');},1600);
+    });
+  }
+</script>
+</body>
+</html>

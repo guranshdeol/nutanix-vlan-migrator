@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vlan-migrator"
+version = "0.1.0"
+description = "Interactive rolling VLAN Basic->Advanced migration tool for Nutanix Prism Central (v4 APIs)."
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.28",
+    "PyYAML>=6.0",
+    "rich>=13.0",
+    "questionary>=2.0",
+]
+
+[project.scripts]
+vlan-migrator = "vlan_migrator.cli:main"
+vlanmig = "vlan_migrator.cli:main"
+
+[tool.setuptools]
+packages = ["vlan_migrator"]
