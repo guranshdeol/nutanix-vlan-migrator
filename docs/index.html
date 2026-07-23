@@ -137,14 +137,14 @@
   <section id="usage">
     <h2>Usage</h2>
     <p class="muted">Launch the interactive UI, or drive it non-interactively for automation:</p>
-<pre><code># Interactive menu
-./run.sh
+<pre><code># Interactive menu (global command, run from anywhere)
+vlan-migrator
 
 # Non-interactive
-./run.sh list-basic                          # list Basic VLAN subnets
-./run.sh validate --all                      # validate everything (no changes)
-./run.sh migrate --subnet vlan100 --dry-run  # show the plan
-./run.sh migrate --all                       # rolling migrate all eligible</code></pre>
+vlan-migrator list-basic                          # list Basic VLAN subnets
+vlan-migrator validate --all                      # validate everything (no changes)
+vlan-migrator migrate --subnet vlan100 --dry-run  # show the plan
+vlan-migrator migrate --all                       # rolling migrate all eligible</code></pre>
     <p class="note">Requires Prism Central 7.3+/AOS 7.3+ with the Network Controller enabled. See the <a href="https://github.com/guranshdeol/nutanix-vlan-migrator#readme">full README</a> for configuration and safety notes.</p>
   </section>
 </div>

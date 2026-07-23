@@ -1,12 +1,14 @@
 <#
-Launch the VLAN Migrator from the project-local virtualenv (Windows).
-Passes through any args, e.g.:  .\run.ps1 list-basic
+Convenience launcher (Windows). Prefers the global install, falls back to a
+local .venv. Passes through args, e.g.:  .\run.ps1 list-basic
 #>
 $ErrorActionPreference = "Stop"
-$Src = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$Exe = Join-Path $Src ".venv\Scripts\vlan-migrator.exe"
-if (-not (Test-Path $Exe)) {
-    Write-Host "venv not found. Run:  powershell -ExecutionPolicy Bypass -File install.ps1 -NoRun" -ForegroundColor Red
+$Global = Join-Path $env:USERPROFILE ".nutanix-vlan-migrator\venv\Scripts\vlan-migrator.exe"
+$Src    = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$Local  = Join-Path $Src ".venv\Scripts\vlan-migrator.exe"
+if     (Test-Path $Global) { & $Global @args }
+elseif (Test-Path $Local)  { & $Local  @args }
+else {
+    Write-Host "Not installed yet. Run:  powershell -ExecutionPolicy Bypass -File install.ps1" -ForegroundColor Red
     exit 1
 }
-& $Exe @args

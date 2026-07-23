@@ -18,7 +18,9 @@ curl -fsSL https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/m
 irm https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.ps1 | iex
 ```
 
-The installer finds Python 3.8+, clones this repo, creates an isolated `.venv`, installs the tool and all dependencies into it, and launches the interactive UI. To remove everything later, just delete the folder (`rm -rf nutanix-vlan-migrator`).
+The installer finds Python 3.8+, installs the tool into an isolated virtualenv (`~/.nutanix-vlan-migrator/venv`), adds a global **`vlan-migrator`** command to your PATH, and launches the interactive UI immediately. After that, just type `vlan-migrator` from any directory.
+
+> If `vlan-migrator` isn't found right after install, open a new terminal (or run `export PATH="$HOME/.local/bin:$PATH"`) so the updated PATH takes effect.
 
 ---
 
@@ -61,20 +63,17 @@ The tool implements a three-phase workflow:
 
 ### Interactive (default)
 ```bash
-./run.sh
-# or
-.venv/bin/vlan-migrator          # macOS/Linux
-.venv\Scripts\vlan-migrator.exe  # Windows
+vlan-migrator
 ```
 You get an arrow-key menu: **List Basic VLANs · Validate · Migrate · Reload · Quit**, with colored tables, checkbox subnet selection, confirmation prompts, and a live migration summary.
 
 ### Non-interactive (automation / CI)
 ```bash
-./run.sh list-basic                              # list Basic VLAN subnets
-./run.sh validate --all                          # validate every Basic VLAN
-./run.sh validate --subnet vlan100               # validate specific subnet(s)
-./run.sh migrate --subnet vlan100 --dry-run      # show plan, no changes
-./run.sh migrate --all                           # rolling migrate all eligible
+vlan-migrator list-basic                              # list Basic VLAN subnets
+vlan-migrator validate --all                          # validate every Basic VLAN
+vlan-migrator validate --subnet vlan100               # validate specific subnet(s)
+vlan-migrator migrate --subnet vlan100 --dry-run      # show plan, no changes
+vlan-migrator migrate --all                           # rolling migrate all eligible
 ```
 Exit codes: `0` success, `1` findings/failures, `2` usage/config error.
 
@@ -123,11 +122,12 @@ python3 -m venv .venv
 
 ## Uninstall
 
-Everything lives in the project-local `.venv`:
+Everything lives in one isolated directory plus two PATH symlinks:
 ```bash
-rm -rf .venv          # remove the tool + dependencies
-rm -rf nutanix-vlan-migrator   # remove everything
+rm -rf ~/.nutanix-vlan-migrator
+rm -f  ~/.local/bin/vlan-migrator ~/.local/bin/vlanmig
 ```
+On Windows: delete `%USERPROFILE%\.nutanix-vlan-migrator` and the `vlan-migrator.cmd` launcher in `%USERPROFILE%\.local\bin`.
 
 ---
 
