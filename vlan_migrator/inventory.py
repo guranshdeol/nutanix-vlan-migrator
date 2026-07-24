@@ -8,6 +8,7 @@ from .client import PrismCentralClient
 
 SUBNETS_PATH = "/networking/v4.3/config/subnets"
 VMS_PATH = "/vmm/v4.0/ahv/config/vms"
+CLUSTERS_PATH = "/clustermgmt/v4.0/config/clusters"
 
 
 @dataclass
@@ -103,6 +104,7 @@ class Inventory:
         self._client = client
         self._subnets: Optional[List[Subnet]] = None
         self._vms: Optional[List[Vm]] = None
+        self._clusters: Optional[Dict[str, str]] = None
 
     # ---- subnets -------------------------------------------------------
     def subnets(self, refresh: bool = False) -> List[Subnet]:
@@ -139,6 +141,27 @@ class Inventory:
                     out.append((vm, nic))
         return out
 
+    # ---- clusters ------------------------------------------------------
+    def clusters(self, refresh: bool = False) -> Dict[str, str]:
+        """Map of cluster extId -> cluster name (best-effort)."""
+        if self._clusters is None or refresh:
+            mapping: Dict[str, str] = {}
+            try:
+                for c in self._client.get_all(CLUSTERS_PATH):
+                    ext = c.get("extId")
+                    if ext:
+                        mapping[ext] = c.get("name") or ext
+            except Exception:  # noqa: BLE001 - name resolution is non-critical
+                mapping = {}
+            self._clusters = mapping
+        return self._clusters
+
+    def cluster_name(self, ext_id: Optional[str]) -> str:
+        if not ext_id:
+            return "-"
+        return self.clusters().get(ext_id, ext_id)
+
     def invalidate(self) -> None:
         self._subnets = None
         self._vms = None
+        self._clusters = None

@@ -150,32 +150,71 @@ def _subnet_table(inv: Inventory, subnets: List[Subnet]) -> Table:
     table.add_column("extId", style="dim")
     for s in subnets:
         vms = len(inv.vms_on_subnet(s.ext_id))
-        table.add_row(s.name, str(s.vlan_id), str(vms), s.cluster_ref or "-", s.ext_id)
+        table.add_row(s.name, str(s.vlan_id), str(vms), inv.cluster_name(s.cluster_ref), s.ext_id)
     return table
 
 
-def _findings_table(svs: List[SubnetValidation]) -> Table:
-    table = Table(title="Validation Results", header_style="bold cyan")
+def _decision(sv: SubnetValidation):
+    """Return (label, color, plain-English meaning)."""
+    if sv.can_migrate:
+        return ("READY", "green", "Passed all checks - safe to migrate")
+    if sv.skip:
+        return ("SKIP", "yellow", "Trunked vNICs found (not supported) - will be skipped")
+    return ("BLOCKED", "red", "Blocking issues found - fix these before migrating")
+
+
+def _render_validation(inv: Inventory, svs: List[SubnetValidation]) -> None:
+    """Print a clear validation report: a table of decisions + real issues,
+    a legend explaining each decision, and a single note about server-side checks."""
+    table = Table(title="Validation Results", header_style="bold cyan", show_lines=True)
     table.add_column("Subnet")
+    table.add_column("VLAN", justify="right")
+    table.add_column("VMs", justify="right")
+    table.add_column("Cluster")
     table.add_column("Decision")
-    table.add_column("Findings")
-    color = {
-        "MIGRATE": "green",
-        "SKIP": "yellow",
-        "BLOCKED": "red",
-    }
+    table.add_column("Issues to review")
+
+    had_service_note = False
     for sv in svs:
-        decision = "MIGRATE" if sv.can_migrate else ("SKIP" if sv.skip else "BLOCKED")
-        lines = []
+        label, color, _meaning = _decision(sv)
+        issues = []
         for f in sv.findings:
-            tag = {"ERROR": "red", "WARNING": "yellow", "INFO": "dim"}[f.level.value]
-            lines.append(f"[{tag}]{f.level.value}[/] [{f.code}] {f.message}")
+            if f.level == Level.INFO:
+                if f.code == "SERVICE_COMPAT":
+                    had_service_note = True
+                continue  # INFO notes are summarized below, not per-row
+            tag = "red" if f.level == Level.ERROR else "yellow"
+            issues.append(f"[{tag}]•[/] {f.message}")
+        vms = len(inv.vms_on_subnet(sv.subnet.ext_id))
         table.add_row(
-            f"{sv.subnet.name}\n[dim]vlan {sv.subnet.vlan_id}[/]",
-            f"[{color[decision]}]{decision}[/]",
-            "\n".join(lines) or "[dim]none[/]",
+            sv.subnet.name,
+            str(sv.subnet.vlan_id),
+            str(vms),
+            inv.cluster_name(sv.subnet.cluster_ref),
+            f"[{color}]{label}[/]",
+            "\n".join(issues) if issues else "[green]None - all checks passed[/]",
         )
-    return table
+    console.print(table)
+
+    # Legend + counts so the decision column is self-explanatory.
+    ready = sum(1 for sv in svs if sv.can_migrate)
+    skip = sum(1 for sv in svs if sv.skip)
+    blocked = sum(1 for sv in svs if not sv.can_migrate and not sv.skip)
+    console.print(
+        f"\n[bold]Summary:[/] [green]{ready} READY[/] · "
+        f"[yellow]{skip} SKIP[/] · [red]{blocked} BLOCKED[/]"
+    )
+    console.print(
+        "[dim]READY = passed all checks, safe to migrate.  "
+        "SKIP = has trunked vNICs (unsupported).  "
+        "BLOCKED = has errors (e.g. duplicate MACs) that must be fixed first.[/]"
+    )
+    if had_service_note:
+        console.print(
+            "[dim]Note: deeper service-compatibility checks (older Nutanix Files, "
+            "SyncRep on unsupported AOS, etc.) are run automatically by Prism Central "
+            "during the migration itself.[/]"
+        )
 
 
 def _pick_subnets(inv: Inventory, basics: List[Subnet]) -> List[Subnet]:
@@ -217,7 +256,7 @@ def _action_validate(inv: Inventory) -> None:
         return
     with console.status("[cyan]Validating..."):
         _global, svs = Validator(inv).validate_all(targets)
-    console.print(_findings_table(svs))
+    _render_validation(inv, svs)
 
 
 def _action_migrate(inv: Inventory, client: PrismCentralClient, cfg: AppConfig) -> None:
@@ -232,7 +271,7 @@ def _action_migrate(inv: Inventory, client: PrismCentralClient, cfg: AppConfig) 
 
     with console.status("[cyan]Running pre-migration validation..."):
         _global, svs = Validator(inv).validate_all(targets)
-    console.print(_findings_table(svs))
+    _render_validation(inv, svs)
 
     eligible = [sv.subnet for sv in svs if sv.can_migrate]
     if not eligible:
