@@ -2,13 +2,22 @@
 #
 #   irm https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.ps1 | iex
 #
-# Installs the tool into an isolated virtualenv, adds a global `vlan-migrator`
-# command to your user PATH, and launches it. Designed to be safe under
-# `irm | iex` (never calls `exit`, so it won't close your terminal).
+# Self-bootstrapping: on a fresh machine it installs the prerequisites it needs
+# (Python 3.8+ and git), then installs the tool into an isolated virtualenv,
+# adds a global `vlan-migrator` command to your user PATH, and launches it.
+# Safe under `irm | iex` (never calls `exit`, so it won't close your terminal).
 
 function Invoke-VlanMigratorInstall {
     $ErrorActionPreference = "Stop"
     function Say($m) { Write-Host "==> $m" -ForegroundColor Cyan }
+
+    $Repo    = if ($env:VLANMIG_REPO)   { $env:VLANMIG_REPO }   else { "https://github.com/guranshdeol/nutanix-vlan-migrator.git" }
+    $Branch  = if ($env:VLANMIG_BRANCH) { $env:VLANMIG_BRANCH } else { "main" }
+    $HomeDir = if ($env:VLANMIG_HOME)   { $env:VLANMIG_HOME }   else { Join-Path $env:USERPROFILE ".nutanix-vlan-migrator" }
+    $BinDir  = if ($env:VLANMIG_BIN)    { $env:VLANMIG_BIN }    else { Join-Path $env:USERPROFILE ".local\bin" }
+    $Venv    = Join-Path $HomeDir "venv"
+    $NoRun   = [bool]$env:VLANMIG_NORUN
+    $PyVer   = "3.12.4"
 
     function Refresh-Path {
         $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -16,16 +25,58 @@ function Invoke-VlanMigratorInstall {
         $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
     }
 
+    # Return @{Exe;Pre} for a Python >=3.8, or $null.
+    function Find-Python {
+        $verCheck = "import sys; raise SystemExit(0 if sys.version_info[:2]>=(3,8) else 1)"
+        foreach ($c in @(@{Exe="py";Pre=@("-3")}, @{Exe="python";Pre=@()}, @{Exe="python3";Pre=@()})) {
+            if (Get-Command $c.Exe -ErrorAction SilentlyContinue) {
+                & $c.Exe @($c.Pre + @("-c", $verCheck)) 2>$null
+                if ($LASTEXITCODE -eq 0) { return $c }
+            }
+        }
+        return $null
+    }
+
+    function Ensure-Python {
+        $p = Find-Python
+        if ($p) { return $p }
+        Say "Python 3.8+ not found - installing it..."
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id Python.Python.3.12 -e --source winget `
+                --accept-package-agreements --accept-source-agreements --scope user
+        } else {
+            $url = "https://www.python.org/ftp/python/$PyVer/python-$PyVer-amd64.exe"
+            $tmp = Join-Path $env:TEMP "python-$PyVer-amd64.exe"
+            Say "Downloading Python $PyVer from python.org..."
+            Invoke-WebRequest -Uri $url -OutFile $tmp
+            Say "Installing Python (silent)..."
+            Start-Process -FilePath $tmp -Wait -ArgumentList `
+                "/quiet","InstallAllUsers=0","PrependPath=1","Include_pip=1","Include_venv=1"
+        }
+        Refresh-Path
+        $p = Find-Python
+        if (-not $p) {
+            Write-Host "Python was installed but isn't on PATH yet. Open a NEW PowerShell window and re-run the installer." -ForegroundColor Yellow
+        }
+        return $p
+    }
+
     function Ensure-Git {
         if (Get-Command git -ErrorAction SilentlyContinue) { return $true }
-        Say "git not found - attempting to install it..."
+        Say "git not found - installing it..."
         if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+            winget install --id Git.Git -e --source winget `
+                --accept-package-agreements --accept-source-agreements
         } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
             choco install git -y
         } else {
-            Write-Host "ERROR: git is required but neither winget nor choco is available. Install Git from https://git-scm.com/download/win and re-run." -ForegroundColor Red
-            return $false
+            $gver = "2.45.2"
+            $url  = "https://github.com/git-for-windows/git/releases/download/v$gver.windows.1/Git-$gver-64-bit.exe"
+            $tmp  = Join-Path $env:TEMP "Git-$gver-64-bit.exe"
+            Say "Downloading Git for Windows..."
+            Invoke-WebRequest -Uri $url -OutFile $tmp
+            Say "Installing Git (silent)..."
+            Start-Process -FilePath $tmp -Wait -ArgumentList "/VERYSILENT","/NORESTART"
         }
         Refresh-Path
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -36,31 +87,9 @@ function Invoke-VlanMigratorInstall {
         return $true
     }
 
-    $Repo    = if ($env:VLANMIG_REPO)   { $env:VLANMIG_REPO }   else { "https://github.com/guranshdeol/nutanix-vlan-migrator.git" }
-    $Branch  = if ($env:VLANMIG_BRANCH) { $env:VLANMIG_BRANCH } else { "main" }
-    $HomeDir = if ($env:VLANMIG_HOME)   { $env:VLANMIG_HOME }   else { Join-Path $env:USERPROFILE ".nutanix-vlan-migrator" }
-    $BinDir  = if ($env:VLANMIG_BIN)    { $env:VLANMIG_BIN }    else { Join-Path $env:USERPROFILE ".local\bin" }
-    $Venv    = Join-Path $HomeDir "venv"
-    $NoRun   = [bool]$env:VLANMIG_NORUN
-
-    # ---- find Python (>=3.8) --------------------------------------------
-    $verCheck = "import sys; raise SystemExit(0 if sys.version_info[:2]>=(3,8) else 1)"
-    $candidates = @(
-        @{ Exe = "py";      Pre = @("-3") },
-        @{ Exe = "python";  Pre = @() },
-        @{ Exe = "python3"; Pre = @() }
-    )
-    $Py = $null
-    foreach ($c in $candidates) {
-        if (Get-Command $c.Exe -ErrorAction SilentlyContinue) {
-            & $c.Exe @($c.Pre + @("-c", $verCheck)) 2>$null
-            if ($LASTEXITCODE -eq 0) { $Py = $c; break }
-        }
-    }
-    if (-not $Py) {
-        Write-Host "ERROR: Python 3.8+ is required but was not found. Install it from https://www.python.org/downloads/ and re-run." -ForegroundColor Red
-        return
-    }
+    # ---- bootstrap prerequisites ----------------------------------------
+    $Py = Ensure-Python
+    if (-not $Py) { return }
     Say "Using Python: $($Py.Exe) $($Py.Pre -join ' ')"
 
     # ---- determine source: local checkout or git ------------------------
@@ -109,11 +138,10 @@ function Invoke-VlanMigratorInstall {
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
         Say "Added $BinDir to your user PATH (new terminals will see it)."
     }
-    if ($env:Path -notlike "*$BinDir*") { $env:Path = "$env:Path;$BinDir" }  # usable now
+    if ($env:Path -notlike "*$BinDir*") { $env:Path = "$env:Path;$BinDir" }
 
     Say "Installed. Type 'vlan-migrator' anywhere to run it."
 
-    # ---- launch ---------------------------------------------------------
     if (-not $NoRun) {
         Say "Launching vlan-migrator..."
         & $Exe

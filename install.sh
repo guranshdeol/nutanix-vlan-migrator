@@ -3,8 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.sh | bash
 #
-# Installs the tool into an isolated virtualenv, adds a global `vlan-migrator`
-# command to your PATH, and launches it immediately.
+# Self-bootstrapping: on a fresh machine it will install the prerequisites it
+# needs (Python 3.8+ with venv/pip, and git), then install the tool into an
+# isolated virtualenv, add a global `vlan-migrator` command to your PATH, and
+# launch it.
 set -euo pipefail
 
 REPO="${VLANMIG_REPO:-https://github.com/guranshdeol/nutanix-vlan-migrator.git}"
@@ -16,6 +18,7 @@ RUN_AFTER=1
 for a in "$@"; do [ "$a" = "--no-run" ] && RUN_AFTER=0; done
 
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mNote:\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # sudo helper: empty when root, else `sudo` if available
@@ -24,17 +27,67 @@ if [ "$(id -u)" -ne 0 ]; then
   command -v sudo >/dev/null 2>&1 && SUDO="sudo"
 fi
 
-# Verify git is present; try to install it via the platform package manager.
+# Find a Python that is >=3.8 AND has working venv + pip (ensurepip).
+find_python() {
+  for c in python3 python; do
+    if command -v "$c" >/dev/null 2>&1 && \
+       "$c" -c 'import sys, venv, ensurepip; raise SystemExit(0 if sys.version_info[:2] >= (3,8) else 1)' >/dev/null 2>&1; then
+      printf '%s' "$c"; return 0
+    fi
+  done
+  return 1
+}
+
+# Load Homebrew into PATH if it is installed anywhere standard.
+_load_brew() {
+  for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$p" ] && eval "$("$p" shellenv)" && return 0
+  done
+  command -v brew >/dev/null 2>&1
+}
+
+ensure_python() {
+  if find_python >/dev/null 2>&1; then return 0; fi
+  say "Python 3.8+ (with venv/pip) not found - installing prerequisites..."
+  case "$(uname -s)" in
+    Darwin)
+      if ! _load_brew; then
+        say "Installing Homebrew (may prompt for your password)..."
+        if [ -e /dev/tty ]; then
+          NONINTERACTIVE=1 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/tty || true
+        else
+          NONINTERACTIVE=1 /bin/bash -c \
+            "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+        fi
+        _load_brew || true
+      fi
+      command -v brew >/dev/null 2>&1 && brew install python git || true
+      ;;
+    Linux)
+      if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -y && $SUDO apt-get install -y python3 python3-venv python3-pip git curl
+      elif command -v dnf     >/dev/null 2>&1; then $SUDO dnf install -y python3 python3-pip git curl
+      elif command -v yum     >/dev/null 2>&1; then $SUDO yum install -y python3 python3-pip git curl
+      elif command -v pacman  >/dev/null 2>&1; then $SUDO pacman -Sy --noconfirm python git curl
+      elif command -v zypper  >/dev/null 2>&1; then $SUDO zypper install -y python3 python3-venv python3-pip git curl
+      elif command -v apk     >/dev/null 2>&1; then $SUDO apk add python3 py3-pip git curl
+      else die "Could not detect a package manager. Please install Python 3.8+ and git manually, then re-run."
+      fi
+      ;;
+    *) die "Unsupported OS. Please install Python 3.8+ and git manually, then re-run." ;;
+  esac
+  find_python >/dev/null 2>&1 || die "Python could not be installed automatically. Please install Python 3.8+ manually and re-run."
+}
+
+# Verify git is present; install it via the platform package manager if not.
 ensure_git() {
   command -v git >/dev/null 2>&1 && return 0
   say "git not found - attempting to install it..."
   case "$(uname -s)" in
     Darwin)
-      if command -v brew >/dev/null 2>&1; then
-        brew install git
-      else
-        xcode-select --install >/dev/null 2>&1 || true
-        die "git is missing. macOS is opening the Command Line Tools installer - finish it, then re-run this command."
+      if _load_brew; then brew install git
+      else xcode-select --install >/dev/null 2>&1 || true
+           die "git is missing. macOS is opening the Command Line Tools installer - finish it, then re-run this command."
       fi
       ;;
     Linux)
@@ -47,21 +100,14 @@ ensure_git() {
       else die "Could not detect a package manager. Please install git manually and re-run."
       fi
       ;;
-    *) die "Unsupported OS for automatic git install. Please install git manually." ;;
   esac
   command -v git >/dev/null 2>&1 || die "git installation did not succeed. Please install git manually and re-run."
   say "git installed: $(git --version)"
 }
 
-# ---- find a suitable Python (>=3.8) -------------------------------------
-PYBIN=""
-for c in python3 python; do
-  if command -v "$c" >/dev/null 2>&1 && \
-     "$c" -c 'import sys; raise SystemExit(0 if sys.version_info[:2]>=(3,8) else 1)'; then
-    PYBIN="$c"; break
-  fi
-done
-[ -n "$PYBIN" ] || die "Python 3.8+ is required but was not found."
+# ---- bootstrap prerequisites --------------------------------------------
+ensure_python
+PYBIN="$(find_python)" || die "Python 3.8+ is required but could not be prepared."
 say "Using Python: $("$PYBIN" --version 2>&1)"
 
 # ---- determine install source: local checkout or git ref ----------------
@@ -75,6 +121,7 @@ fi
 # ---- create the isolated venv -------------------------------------------
 say "Creating virtualenv at $VENV"
 mkdir -p "$HOME_DIR"
+rm -rf "$VENV"
 "$PYBIN" -m venv "$VENV"
 VENV_PY="$VENV/bin/python"
 "$VENV_PY" -m pip install --upgrade pip wheel >/dev/null
@@ -97,7 +144,7 @@ say "Linked global command -> $BIN_DIR/vlan-migrator"
 # ---- ensure BIN_DIR is on PATH (persist in shell rc) --------------------
 add_path_line='export PATH="$HOME/.local/bin:$PATH"'
 case ":$PATH:" in
-  *":$BIN_DIR:"*) : ;;  # already on PATH for this session
+  *":$BIN_DIR:"*) : ;;
   *)
     for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
       if [ -f "$rc" ] || [ "$rc" = "$HOME/.profile" ]; then
@@ -107,6 +154,7 @@ case ":$PATH:" in
         fi
       fi
     done
+    export PATH="$BIN_DIR:$PATH"
     ;;
 esac
 
@@ -118,9 +166,8 @@ if [ "$RUN_AFTER" -eq 1 ]; then
   if [ -t 0 ]; then
     exec "$VENV/bin/vlan-migrator"
   elif { : < /dev/tty; } 2>/dev/null; then
-    # Piped install (curl | bash): stdin is the script, so read from the TTY.
     exec "$VENV/bin/vlan-migrator" < /dev/tty
   else
-    echo "Open a new terminal (or run: export PATH=\"$BIN_DIR:\$PATH\") then type: vlan-migrator"
+    warn "Open a new terminal (or run: export PATH=\"$BIN_DIR:\$PATH\") then type: vlan-migrator"
   fi
 fi

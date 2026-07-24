@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/m
 irm https://raw.githubusercontent.com/guranshdeol/nutanix-vlan-migrator/main/install.ps1 | iex
 ```
 
-The installer finds Python 3.8+, installs the tool into an isolated virtualenv (`~/.nutanix-vlan-migrator/venv`), adds a global **`vlan-migrator`** command to your PATH, and launches the interactive UI immediately. After that, just type `vlan-migrator` from any directory.
+**Self-bootstrapping** — on a completely fresh machine the installer auto-installs everything it needs (Python 3.8+ with venv/pip, and git), then installs the tool into an isolated virtualenv (`~/.nutanix-vlan-migrator/venv`), adds a global **`vlan-migrator`** command to your PATH, and launches the interactive UI immediately. After that, just type `vlan-migrator` from any directory.
 
 > If `vlan-migrator` isn't found right after install, open a new terminal (or run `export PATH="$HOME/.local/bin:$PATH"`) so the updated PATH takes effect.
 
@@ -51,9 +51,11 @@ The tool implements a three-phase workflow:
 
 ## Requirements
 
-- **Python 3.8+**
-- **git** — auto-installed by the installer if missing (Homebrew/apt/dnf/yum/pacman/zypper/apk on macOS/Linux; winget/choco on Windows)
-- Network access to a **Prism Central** with:
+The installer bootstraps these automatically on a fresh machine:
+- **Python 3.8+** (with venv/pip) — via Homebrew (macOS), the system package manager (Linux), or winget / python.org download (Windows)
+- **git** — via Homebrew/apt/dnf/yum/pacman/zypper/apk (macOS/Linux) or winget/choco/Git-for-Windows download (Windows)
+
+You only need a shell and internet access. Plus network access to a **Prism Central** with:
   - PC 7.3+ / AOS 7.3+ (v4 `networking` GA)
   - **Network Controller enabled** (required for Advanced subnets)
 - A PC user with permission to read subnets/VMs and run subnet migration.
