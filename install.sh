@@ -18,6 +18,41 @@ for a in "$@"; do [ "$a" = "--no-run" ] && RUN_AFTER=0; done
 say()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# sudo helper: empty when root, else `sudo` if available
+SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+  command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+fi
+
+# Verify git is present; try to install it via the platform package manager.
+ensure_git() {
+  command -v git >/dev/null 2>&1 && return 0
+  say "git not found - attempting to install it..."
+  case "$(uname -s)" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then
+        brew install git
+      else
+        xcode-select --install >/dev/null 2>&1 || true
+        die "git is missing. macOS is opening the Command Line Tools installer - finish it, then re-run this command."
+      fi
+      ;;
+    Linux)
+      if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -y && $SUDO apt-get install -y git
+      elif command -v dnf     >/dev/null 2>&1; then $SUDO dnf install -y git
+      elif command -v yum     >/dev/null 2>&1; then $SUDO yum install -y git
+      elif command -v pacman  >/dev/null 2>&1; then $SUDO pacman -Sy --noconfirm git
+      elif command -v zypper  >/dev/null 2>&1; then $SUDO zypper install -y git
+      elif command -v apk     >/dev/null 2>&1; then $SUDO apk add git
+      else die "Could not detect a package manager. Please install git manually and re-run."
+      fi
+      ;;
+    *) die "Unsupported OS for automatic git install. Please install git manually." ;;
+  esac
+  command -v git >/dev/null 2>&1 || die "git installation did not succeed. Please install git manually and re-run."
+  say "git installed: $(git --version)"
+}
+
 # ---- find a suitable Python (>=3.8) -------------------------------------
 PYBIN=""
 for c in python3 python; do
@@ -48,7 +83,7 @@ if [ -n "$SRC" ]; then
   say "Installing from local checkout: $SRC"
   "$VENV_PY" -m pip install "$SRC"
 else
-  command -v git >/dev/null 2>&1 || die "git is required to install from $REPO"
+  ensure_git
   say "Installing from $REPO@$BRANCH"
   "$VENV_PY" -m pip install "git+$REPO@$BRANCH"
 fi

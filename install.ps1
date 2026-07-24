@@ -10,6 +10,32 @@ function Invoke-VlanMigratorInstall {
     $ErrorActionPreference = "Stop"
     function Say($m) { Write-Host "==> $m" -ForegroundColor Cyan }
 
+    function Refresh-Path {
+        $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $user    = [Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
+    }
+
+    function Ensure-Git {
+        if (Get-Command git -ErrorAction SilentlyContinue) { return $true }
+        Say "git not found - attempting to install it..."
+        if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id Git.Git -e --source winget --accept-package-agreements --accept-source-agreements
+        } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+            choco install git -y
+        } else {
+            Write-Host "ERROR: git is required but neither winget nor choco is available. Install Git from https://git-scm.com/download/win and re-run." -ForegroundColor Red
+            return $false
+        }
+        Refresh-Path
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            Write-Host "git was installed but isn't on PATH yet. Open a NEW PowerShell window and re-run the installer." -ForegroundColor Yellow
+            return $false
+        }
+        Say "git installed: $(git --version)"
+        return $true
+    }
+
     $Repo    = if ($env:VLANMIG_REPO)   { $env:VLANMIG_REPO }   else { "https://github.com/guranshdeol/nutanix-vlan-migrator.git" }
     $Branch  = if ($env:VLANMIG_BRANCH) { $env:VLANMIG_BRANCH } else { "main" }
     $HomeDir = if ($env:VLANMIG_HOME)   { $env:VLANMIG_HOME }   else { Join-Path $env:USERPROFILE ".nutanix-vlan-migrator" }
@@ -58,10 +84,7 @@ function Invoke-VlanMigratorInstall {
         Say "Installing from local checkout: $Src"
         & $VenvPy -m pip install "$Src"
     } else {
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-            Write-Host "ERROR: git is required to install from $Repo. Install Git for Windows and re-run." -ForegroundColor Red
-            return
-        }
+        if (-not (Ensure-Git)) { return }
         Say "Installing from $Repo@$Branch"
         & $VenvPy -m pip install "git+$Repo@$Branch"
     }

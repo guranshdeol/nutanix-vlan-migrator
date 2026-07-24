@@ -52,6 +52,7 @@ The tool implements a three-phase workflow:
 ## Requirements
 
 - **Python 3.8+**
+- **git** — auto-installed by the installer if missing (Homebrew/apt/dnf/yum/pacman/zypper/apk on macOS/Linux; winget/choco on Windows)
 - Network access to a **Prism Central** with:
   - PC 7.3+ / AOS 7.3+ (v4 `networking` GA)
   - **Network Controller enabled** (required for Advanced subnets)
